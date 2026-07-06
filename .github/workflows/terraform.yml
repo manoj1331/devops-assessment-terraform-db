@@ -1,0 +1,50 @@
+name: Terraform Plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive ../../
+
+      - name: Terraform Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=${{ matrix.environment }}.tfvars -refresh=false -no-color | tee plan_output.txt
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ matrix.environment }}
+          path: infra/envs/${{ matrix.environment }}/plan_output.txt
+
+      - name: Comment Plan on Pull Request
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: infra/envs/${{ matrix.environment }}/plan_output.txt
